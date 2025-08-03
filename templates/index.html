@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>勤怠管理システム</title>
+    <link rel="stylesheet" href="../static/style.css">
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>勤怠管理システム</h1>
+        </header>
+
+        <main id="main-content" style="display: none;">
+            <div class="top-row">
+                <section class="card attendance-card">
+                    <h2>クイック記録</h2>
+                    <div class="button-group">
+                        <button id="check-in">出勤</button>
+                        <button id="check-out">退勤</button>
+                    </div>
+                </section>
+                <section class="card announcements-card">
+                    <div class="card-header">
+                        <h2>お知らせ</h2>
+                        <button id="open-announcement-modal" class="add-button">+</button>
+                    </div>
+                    <div id="announcements-list"></div>
+                </section>
+            </div>
+
+            <section class="card monthly-record-card">
+                <h2>月別記録</h2>
+                <div id="monthly-summary"></div> <!-- Monthly Summary Panel -->
+                <div class="calendar-nav">
+                    <button id="prev-month">&lt; 前の月</button>
+                    <span id="current-month-year"></span>
+                    <button id="next-month">次の月 &gt;</button>
+                </div>
+                <div id="calendar-container">
+                    <div id="calendar-grid"></div>
+                </div>
+            </section>
+
+            <section class="card task-management-card">
+                <h2>タスク管理</h2>
+                <div class="input-group">
+                    <select id="task-category">
+                        <option value="顧客">顧客</option>
+                        <option value="社内">社内</option>
+                    </select>
+                    <input type="text" id="task-name" placeholder="新しいタスク名">
+                    <button id="define-task">タスク追加</button>
+                </div>
+                <div id="defined-tasks-list"></div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Employee ID Input Modal -->
+    <div id="employee-id-modal" class="modal" style="display: flex;">
+        <div class="modal-content">
+            <h2>社員番号入力</h2>
+            <div class="input-group">
+                <input type="text" id="modal-employee-id" placeholder="社員番号を入力してください">
+                <button id="submit-employee-id">確認</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Announcement Modal -->
+    <div id="announcement-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-button">&times;</span>
+            <h2>新しいお知らせ作成</h2>
+            <div class="input-group">
+                <input type="text" id="announcement-title" placeholder="タイトル">
+                <textarea id="announcement-content" placeholder="内容"></textarea>
+                <button id="add-announcement">お知らせ追加</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let backend;
+        let currentYear, currentMonth;
+        let attendanceData = {};
+        let allTasks = { "顧客": [], "社内": [] };
+        let holidays = []; // New: Store holidays
+        const workTypes = ["出勤", "在宅", "有給", "祝日出勤", "休日", "午前有給", "午後有給", "欠勤"];
+        const typesWithoutTime = ["有給", "休日", "欠勤"];
+
+        // --- Utility Functions ---
+        function toYYYYMMDD(date) {
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        }
+
+        function timeStrToMinutes(timeStr) {
+            if (!timeStr || !timeStr.includes(':')) return 0;
+            const [h, m] = timeStr.split(':').map(Number);
+            return h * 60 + m;
+        }
+
+        function formatTimeInput(event) {
+            let value = event.target.value.replace(/[^\d]/g, '');
+            if (value.length === 4) {
+                event.target.value = `${value.slice(0, 2)}:${value.slice(2, 4)}`;
+            }
+        }
+
+        window.addEventListener("DOMContentLoaded", () => {
+            const now = new Date();
+            currentYear = now.getFullYear();
+            currentMonth = now.getMonth();
+
+            new QWebChannel(qt.webChannelTransport, function (channel) {
+                backend = channel.objects.backend;
+
+                backend.dataLoaded.connect(initializeUI);
+                backend.dayDataChanged.connect(updateDayOnCalendar);
+                backend.taskUpdated.connect(renderTasks);
+                backend.announcementUpdated.connect(renderAnnouncements);
+                backend.showEmployeeIdPrompt.connect(showEmployeeIdModal);
+
+                document.getElementById("check-in").addEventListener("click", () => backend.checkIn());
+                document.getElementById("check-out").addEventListener("click", () => backend.checkOut());
+                document.getElementById('prev-month').addEventListener('click', () => changeMonth(-1));
+                document.getElementById('next-month').addEventListener('click', () => changeMonth(1));
+                document.getElementById('define-task').addEventListener('click', defineTask);
+                
+                const announcementModal = document.getElementById('announcement-modal');
+                document.getElementById('open-announcement-modal').addEventListener('click', () => announcementModal.style.display = 'flex');
+                announcementModal.querySelector('.close-button').addEventListener('click', () => announcementModal.style.display = 'none');
+                document.getElementById('add-announcement').addEventListener('click', addAnnouncement);
+                window.addEventListener('click', (event) => { if (event.target == announcementModal) { announcementModal.style.display = 'none'; } });
+
+                const employeeIdModal = document.getElementById('employee-id-modal');
+                document.getElementById('submit-employee-id').addEventListener('click', submitEmployeeId);
+                document.getElementById('modal-employee-id').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') submitEmployeeId();
+                });
+
+            });
+        });
+
+        function showEmployeeIdModal() {
+            document.getElementById('employee-id-modal').style.display = 'flex';
+            document.getElementById('main-content').style.display = 'none';
+        }
+
+        function submitEmployeeId() {
+            const employeeId = document.getElementById('modal-employee-id').value.trim();
+            if (employeeId) {
+                backend.setEmployeeId(employeeId);
+                document.getElementById('employee-id-modal').style.display = 'none';
+                document.getElementById('main-content').style.display = 'flex';
+            } else {
+                alert("社員番号を入力してください。");
+            }
+        }
+
+        function initializeUI(data) {
+            attendanceData = data.attendance || {};
+            allTasks = data.tasks || { "顧客": [], "社内": [] };
+            holidays = data.holidays || []; // New: Assign holidays
+            renderAnnouncements(data.announcements || []);
+            renderTasks(allTasks);
+            renderCalendar(currentYear, currentMonth, attendanceData);
+            renderMonthlySummary(currentYear, currentMonth, attendanceData);
+        }
+
+        function changeMonth(direction) {
+            currentMonth += direction;
+            if (currentMonth < 0) { currentMonth = 11; currentYear--; }
+            else if (currentMonth > 11) { currentMonth = 0; currentYear++; }
+            backend.requestInitialData();
+        }
+
+        // --- Rendering Functions ---
+
+        function renderCalendar(year, month, data) {
+            attendanceData = data;
+            const calendarGrid = document.getElementById('calendar-grid');
+            document.getElementById('current-month-year').textContent = `${year}年 ${month + 1}月`;
+            calendarGrid.innerHTML = '';
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            for (let i = 1; i <= daysInMonth; i++) {
+                const date = new Date(year, month, i);
+                const dateStr = toYYYYMMDD(date);
+                const dayData = attendanceData[dateStr] || {};
+                const dayCell = createDayCell(date, dayData);
+                calendarGrid.appendChild(dayCell);
+            }
+        }
+
+        function createDayCell(date, dayData) {
+            const dateStr = toYYYYMMDD(date);
+            const dayCell = document.createElement('div');
+            dayCell.className = 'calendar-day';
+            dayCell.dataset.date = dateStr;
+
+            // Add day-specific classes
+            const dayOfWeekNum = date.getDay();
+            if (dayOfWeekNum === 0) { // Sunday
+                dayCell.classList.add('sunday');
+            } else if (dayOfWeekNum === 6) { // Saturday
+                dayCell.classList.add('saturday');
+            }
+            if (holidays.includes(dateStr)) { // Japanese Holiday
+                dayCell.classList.add('holiday');
+            }
+
+            const workType = dayData.work_type || "";
+            const isTimeHidden = typesWithoutTime.includes(workType);
+            const subtasks = dayData.subtasks || [];
+
+            const { workHours, overtimeHours } = calculateWorkHours(workType, dayData.check_in, dayData.check_out, dayData.rest_time);
+            const dayOfWeek = ['日', '月', '火', '水', '木', '金', '土'][date.getDay()];
+
+            const dailyTaskSummary = subtasks.reduce((acc, task) => {
+                const taskCategory = Object.keys(allTasks).find(cat => allTasks[cat].includes(task.name));
+                if (taskCategory) {
+                    acc[taskCategory] = (acc[taskCategory] || 0) + timeStrToMinutes(task.time);
+                }
+                return acc;
+            }, {});
+
+            dayCell.innerHTML = `
+                <div class="day-header">
+                    <span class="day-number">${date.getDate()}</span>
+                    <span class="day-of-week">${dayOfWeek}</span>
+                </div>
+                <div class="day-content">
+                    <select class="day-input work-type" data-field="work_type">${workTypes.map(wt => `<option value="${wt}" ${wt === workType ? 'selected' : ''}>${wt}</option>`).join('')}</select>
+                    <div class="time-fields-container" ${isTimeHidden ? 'style="display: none;"' : ''}>
+                        <div class="time-inputs">
+                            <input type="text" class="day-input time-input" data-field="check_in" value="${dayData.check_in || ''}" placeholder="HH:MM">
+                            <span>-</span>
+                            <input type="text" class="day-input time-input" data-field="check_out" value="${dayData.check_out || ''}" placeholder="HH:MM">
+                        </div>
+                        <div class="rest-time-input"><label>休憩:</label><input type="text" class="day-input rest-time time-input" data-field="rest_time" value="${dayData.rest_time || '01:00'}"></div>
+                        <div class="calculated-times"><span>勤務: <strong>${workHours}</strong></span><span>残業: <strong>${overtimeHours}</strong></span></div>
+                    </div>
+                    <div class="daily-task-summary">${Object.entries(dailyTaskSummary).map(([cat, min]) => `${cat}: ${(min/60).toFixed(1)}h`).join(', ') || '-'}</div>
+                    <div class="subtask-section">
+                        <select class="day-input subtask-select">
+                            <option value="">+ タスク追加</option>
+                            <optgroup label="顧客">${allTasks["顧客"].map(t => `<option value="${t}">${t}</option>`).join('')}</optgroup>
+                            <optgroup label="社内">${allTasks["社内"].map(t => `<option value="${t}">${t}</option>`).join('')}</optgroup>
+                        </select>
+                        <div class="subtask-list">${subtasks.map(st => `
+                            <div class="subtask-entry" data-task-name="${st.name}">
+                                <span class="subtask-name">${st.name}</span>
+                                <input type="text" class="day-input subtask-time" value="${st.time || '00:00'}">
+                                <button class="delete-subtask">&times;</button>
+                            </div>`).join('')}</div>
+                    </div>
+                </div>`;
+
+            dayCell.querySelectorAll('.day-input, .subtask-time').forEach(input => input.addEventListener('change', (e) => handleDayDataChange(e, dateStr)));
+            dayCell.querySelectorAll('.time-input').forEach(input => input.addEventListener('input', formatTimeInput));
+            dayCell.querySelector('.subtask-select').addEventListener('change', (e) => addSubtask(e, dateStr));
+            dayCell.querySelectorAll('.delete-subtask').forEach(button => button.addEventListener('click', (e) => removeSubtask(e, dateStr)));
+
+            return dayCell;
+        }
+
+        function updateDayOnCalendar(dateStr, dayData) {
+            attendanceData[dateStr] = dayData;
+            const dayCell = document.querySelector(`.calendar-day[data-date='${dateStr}']`);
+            if (dayCell) {
+                const [year, month, day] = dateStr.split('-').map(Number);
+                const date = new Date(year, month - 1, day);
+                const newDayCell = createDayCell(date, dayData);
+                dayCell.replaceWith(newDayCell);
+            }
+            renderMonthlySummary(currentYear, currentMonth, attendanceData);
+        }
+
+        function renderTasks(tasks) {
+            allTasks = tasks;
+            const listContainer = document.getElementById('defined-tasks-list');
+            listContainer.innerHTML = '';
+            for (const category in tasks) {
+                const categoryDiv = document.createElement('div');
+                categoryDiv.className = 'task-category';
+                categoryDiv.innerHTML = `<h3>${category}</h3>`;
+                const ul = document.createElement('ul');
+                tasks[category].forEach(task => {
+                    const li = document.createElement('li');
+                    li.textContent = task;
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.textContent = '削除';
+                    deleteBtn.onclick = () => backend.deleteTask(category, task);
+                    li.appendChild(deleteBtn);
+                    ul.appendChild(li);
+                });
+                categoryDiv.appendChild(ul);
+                listContainer.appendChild(categoryDiv);
+            }
+            renderCalendar(currentYear, currentMonth, attendanceData);
+        }
+
+        function renderAnnouncements(announcements) {
+            const list = document.getElementById('announcements-list');
+            list.innerHTML = announcements.map(a => `<div class="announcement"><h4>${a.title} (${a.date})</h4><p>${a.content}</p></div>`).join('');
+        }
+
+        function renderMonthlySummary(year, month, data) {
+            const summaryContainer = document.getElementById('monthly-summary');
+            const workTypeCounts = {};
+            let totalOvertimeMinutes = 0;
+            const taskCategoryMinutes = {};
+
+            for (const dateStr in data) {
+                if (dateStr.startsWith(`${year}-${String(month + 1).padStart(2, '0')}`)) {
+                    const dayData = data[dateStr];
+                    const workType = dayData.work_type;
+                    if (workType) {
+                        workTypeCounts[workType] = (workTypeCounts[workType] || 0) + 1;
+                    }
+
+                    const { workHours, overtimeHours } = calculateWorkHours(workType, dayData.check_in, dayData.check_out, dayData.rest_time);
+                    if (overtimeHours !== '-') {
+                        totalOvertimeMinutes += parseFloat(overtimeHours) * 60;
+                    }
+
+                    if (dayData.subtasks) {
+                        dayData.subtasks.forEach(task => {
+                            const taskCategory = Object.keys(allTasks).find(cat => allTasks[cat].includes(task.name));
+                            if (taskCategory) {
+                                taskCategoryMinutes[taskCategory] = (taskCategoryMinutes[taskCategory] || 0) + timeStrToMinutes(task.time);
+                            }
+                        });
+                    }
+                }
+            }
+
+            const workTypeHTML = Object.entries(workTypeCounts).map(([type, count]) => `<span>${type}: <strong>${count}日</strong></span>`).join('');
+            const totalOvertimeHTML = `<span>総残業: <strong>${(totalOvertimeMinutes / 60).toFixed(2)}時間</strong></span>`;
+            const taskTimeHTML = Object.entries(taskCategoryMinutes).map(([cat, min]) => `<span>${cat}: <strong>${(min/60).toFixed(2)}時間</strong></span>`).join('');
+
+            summaryContainer.innerHTML = `
+                <div class="summary-group"><h3>勤務日</h3>${workTypeHTML || '-'}</div>
+                <div class="summary-group"><h3>合計時間</h3>${totalOvertimeHTML}${taskTimeHTML}</div>
+            `;
+        }
+
+        // --- Data Handling and Calculation ---
+
+        function handleDayDataChange(event, dateStr) {
+            const dayCell = document.querySelector(`.calendar-day[data-date='${dateStr}']`);
+            let new_data = {};
+            dayCell.querySelectorAll('.day-input[data-field]').forEach(input => { new_data[input.dataset.field] = input.value; });
+            const subtaskEntries = dayCell.querySelectorAll('.subtask-entry');
+            new_data.subtasks = Array.from(subtaskEntries).map(entry => ({ name: entry.dataset.taskName, time: entry.querySelector('.subtask-time').value }));
+            backend.updateDayData(dateStr, new_data);
+        }
+
+        function defineTask() {
+            const category = document.getElementById('task-category').value;
+            const nameInput = document.getElementById('task-name');
+            const name = nameInput.value.trim();
+            if (name) {
+                backend.defineTask(category, name);
+                nameInput.value = '';
+            }
+        }
+        
+        function addAnnouncement() {
+            const modal = document.getElementById('announcement-modal');
+            const titleInput = modal.querySelector('#announcement-title');
+            const contentInput = modal.querySelector('#announcement-content');
+            const title = titleInput.value.trim();
+            const content = contentInput.value.trim();
+            if (title && content) {
+                backend.addAnnouncement(title, content);
+                titleInput.value = '';
+                contentInput.value = '';
+                modal.style.display = 'none';
+            }
+        }
+
+        function addSubtask(event, dateStr) {
+            const selectedTask = event.target.value;
+            if (!selectedTask) return;
+            let dayData = JSON.parse(JSON.stringify(attendanceData[dateStr] || {}));
+            let subtasks = dayData.subtasks || [];
+            if (!subtasks.some(st => st.name === selectedTask)) {
+                subtasks.push({ name: selectedTask, time: "00:00" });
+                dayData.subtasks = subtasks;
+                updateDayOnCalendar(dateStr, dayData);
+                backend.updateDayData(dateStr, dayData);
+            }
+            event.target.value = "";
+        }
+
+        function removeSubtask(event, dateStr) {
+            const taskToRemove = event.target.closest('.subtask-entry').dataset.taskName;
+            let dayData = JSON.parse(JSON.stringify(attendanceData[dateStr] || {}));
+            let subtasks = dayData.subtasks || [];
+            dayData.subtasks = subtasks.filter(st => st.name !== taskToRemove);
+            updateDayOnCalendar(dateStr, dayData);
+            backend.updateDayData(dateStr, dayData);
+        }
+
+        function calculateWorkHours(workType, checkIn, checkOut, restTimeStr) {
+            if (!checkIn || !checkOut || typesWithoutTime.includes(workType)) return { workHours: "-", overtimeHours: "-" };
+            try {
+                const start = new Date(`1970-01-01T${checkIn}`);
+                const end = new Date(`1970-01-01T${checkOut}`);
+                const restMinutes = timeStrToMinutes(restTimeStr);
+                let diffMinutes = (end - start) / 60000;
+                if (diffMinutes < 0) diffMinutes += 24 * 60;
+                const netWorkMinutes = Math.max(0, diffMinutes - restMinutes);
+                const netWorkHours = (netWorkMinutes / 60).toFixed(2);
+                let baseWorkHours = 8;
+                if (workType === "午前有給" || workType === "午後有給") baseWorkHours = 4;
+                let overtime = 0;
+                if (workType === "祝日出勤") overtime = netWorkMinutes;
+                else if (["出勤", "在宅", "午前有給", "午後有給"].includes(workType)) overtime = Math.max(0, netWorkMinutes - baseWorkHours * 60);
+                const overtimeH = (overtime / 60).toFixed(2);
+                return { workHours: netWorkHours, overtimeHours: overtimeH };
+            } catch (e) { return { workHours: "Error", overtimeHours: "Error" }; }
+        }
+
+    </script>
+</body>
+</html>

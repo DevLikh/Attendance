@@ -1,0 +1,158 @@
+/* --- General & Layout --- */
+body {
+    background-color: #f0f2f5;
+    color: #333;
+    font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    margin: 0;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.container {
+    width: 100%;
+    max-width: 95%;
+    margin: 0 auto;
+}
+
+header h1 {
+    text-align: center;
+    font-size: 2.2rem;
+    color: #1c2e3f;
+    margin-bottom: 25px;
+}
+
+main {
+    display: flex;
+    flex-direction: column;
+    gap: 25px;
+}
+
+.top-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 25px;
+}
+
+.card {
+    background-color: #ffffff;
+    border-radius: 12px;
+    padding: 25px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.07);
+    display: flex;
+    flex-direction: column;
+}
+
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.card-header h2 {
+    margin: 0;
+    border: none;
+    padding: 0;
+}
+
+h2 {
+    font-size: 1.4rem;
+    color: #1c2e3f;
+    margin-top: 0;
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #e9ecef;
+}
+
+/* --- Buttons & Inputs --- */
+.button-group button, .input-group button, .add-button, .calendar-nav button {
+    padding: 10px 15px;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s ease, transform 0.1s ease;
+    background-color: #007bff;
+    color: white;
+}
+
+.button-group button:hover, .input-group button:hover, .add-button:hover, .calendar-nav button:hover {
+    background-color: #0056b3;
+}
+
+#check-in { background-color: #28a745; }
+#check-out { background-color: #dc3545; }
+#check-in:hover { background-color: #218838; }
+#check-out:hover { background-color: #c82333; }
+
+.add-button { padding: 5px 10px; font-size: 1.2rem; line-height: 1; }
+
+.input-group { display: flex; flex-direction: column; gap: 10px; }
+.input-group input, .input-group select, .input-group textarea { width: 100%; padding: 10px; border: 1px solid #ced4da; border-radius: 6px; font-size: 0.9rem; box-sizing: border-box; }
+
+/* --- Calendar & Summary --- */
+.calendar-nav { display: flex; justify-content: center; align-items: center; margin-bottom: 15px; }
+#current-month-year { font-size: 1.6rem; font-weight: 600; color: #1c2e3f; margin: 0 20px; }
+#calendar-container { overflow-x: auto; padding-bottom: 15px; }
+#calendar-grid { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(250px, 1fr); gap: 15px; }
+
+.calendar-day {
+    background-color: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    min-height: 360px;
+    padding: 10px;
+    font-size: 0.85rem;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+/* Day specific colors */
+.calendar-day.saturday { background-color: #e0f2f7; border-color: #a7d9ed; }
+.calendar-day.sunday { background-color: #ffe0e0; border-color: #ffb3b3; }
+.calendar-day.holiday { background-color: #fff3e0; border-color: #ffcc80; }
+
+.day-header { display: flex; justify-content: space-between; font-weight: 600; border-bottom: 1px solid #e0e0e0; padding-bottom: 8px; }
+.day-number { font-size: 1.1rem; }
+.day-of-week { color: #6c757d; }
+
+.day-input { width: 100%; padding: 8px; border: 1px solid #ced4da; border-radius: 4px; font-size: 0.85rem; box-sizing: border-box; }
+.time-inputs { display: flex; gap: 5px; align-items: center; }
+.time-inputs input { flex: 1; min-width: 0; }
+.rest-time-input { display: flex; gap: 5px; align-items: center; }
+.calculated-times, .daily-task-summary { font-size: 0.85rem; display: flex; justify-content: space-between; padding-top: 8px; margin-top: 5px; border-top: 1px dashed #e0e0e0; }
+.daily-task-summary { font-weight: bold; color: #0056b3; }
+
+#monthly-summary { background-color: #e9ecef; padding: 15px; border-radius: 8px; margin-bottom: 20px; display: flex; justify-content: space-around; flex-wrap: wrap; gap: 15px; }
+.summary-group { display: flex; flex-direction: column; gap: 5px; align-items: center; }
+.summary-group h3 { font-size: 1rem; color: #495057; margin: 0 0 5px 0; }
+.summary-group span { background: #fff; padding: 3px 8px; border-radius: 10px; font-size: 0.85rem; }
+
+/* --- Subtasks & Announcements --- */
+.subtask-section { margin-top: auto; }
+.subtask-list { display: flex; flex-direction: column; gap: 5px; margin-top: 5px; }
+.subtask-entry { display: flex; align-items: center; gap: 5px; }
+.subtask-name { flex-grow: 1; font-size: 0.8rem; }
+.subtask-time { width: 70px; min-width: 0; }
+.delete-subtask { background: none; border: none; color: #dc3545; cursor: pointer; font-size: 1.2rem; line-height: 1; padding: 0 5px; }
+
+#announcements-list { flex-grow: 1; max-height: 150px; overflow-y: auto; }
+.announcement { padding: 10px; border-bottom: 1px solid #e9ecef; }
+.announcement:last-child { border-bottom: none; }
+.announcement h4 { margin: 0 0 5px 0; font-size: 1rem; }
+.announcement p { margin: 0; font-size: 0.9rem; }
+
+#defined-tasks-list { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+#defined-tasks-list .task-category h3 { font-size: 1.1rem; margin-bottom: 8px; color: #007bff; }
+#defined-tasks-list ul { list-style: none; padding: 0; margin: 0; }
+#defined-tasks-list li { display: flex; justify-content: space-between; align-items: center; padding: 8px; background-color: #f8f9fa; border-radius: 4px; margin-bottom: 5px; }
+#defined-tasks-list button { background-color: #dc3545; color: white; padding: 3px 8px; font-size: 0.8rem; }
+
+/* --- Modal --- */
+.modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.5); justify-content: center; align-items: center; }
+.modal-content { background-color: #fff; margin: auto; padding: 30px; border-radius: 12px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); width: 90%; max-width: 500px; position: relative; }
+.modal-content .input-group { margin-top: 20px; }
+.close-button { color: #aaa; position: absolute; top: 10px; right: 20px; font-size: 28px; font-weight: bold; cursor: pointer; }
+.close-button:hover, .close-button:focus { color: black; }
