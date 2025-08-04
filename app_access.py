@@ -57,7 +57,9 @@ class DatabaseManager:
 
         try:
             self.connection = win32com.client.Dispatch("ADODB.Connection")
-            self.connection.Open(f'Provider={self.provider};Data Source={self.filepath};')
+            connection_string = f'Provider={self.provider};Data Source={self.filepath};'
+            self.connection.Open(connection_string, '', '', -1) # -1 = adModeUnknown, let provider decide
+            self.connection.Mode = 3 # adModeReadWrite
             print("データベースに正常に接続しました。")
         except Exception as e:
             print(f"ADOを使用したデータベース接続エラー: {e}")
