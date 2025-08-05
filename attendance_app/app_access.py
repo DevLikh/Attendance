@@ -129,6 +129,21 @@ class DatabaseManager:
                     Content MEMO
                 );
             """)
+            self._execute("""
+                CREATE TABLE Comments (
+                    ID AUTOINCREMENT PRIMARY KEY,
+                    AnnouncementID LONG,
+                    AuthorName TEXT(100),
+                    CommentText MEMO,
+                    CommentDate DATE
+                );
+            """)
+            self._execute("""
+                CREATE TABLE Users (
+                    EmployeeID TEXT(50) PRIMARY KEY,
+                    UserName TEXT(100)
+                );
+            """)
             print("テーブルの作成が完了しました。")
         except Exception as e:
             print(f"テーブル作成エラー: {e}")
@@ -229,6 +244,40 @@ class DatabaseManager:
         sql = f"INSERT INTO Announcements (EmployeeID, AnnouncementDate, Title, Content) VALUES ('{employee_id}', #{date_str}#, '{safe_title}', '{safe_content}')"
         self._execute(sql)
         print(f"お知らせを追加しました: {employee_id} - {title}")
+
+    def get_user_name(self, employee_id):
+        sql = f"SELECT UserName FROM Users WHERE EmployeeID='{employee_id}'"
+        result = self._query(sql)
+        return result[0]['UserName'] if result else None
+
+    def set_user_name(self, employee_id, user_name):
+        safe_name = user_name.replace("'", "''")
+        check_sql = f"SELECT EmployeeID FROM Users WHERE EmployeeID='{employee_id}'"
+        if self._query(check_sql):
+            sql = f"UPDATE Users SET UserName='{safe_name}' WHERE EmployeeID='{employee_id}'"
+        else:
+            sql = f"INSERT INTO Users (EmployeeID, UserName) VALUES ('{employee_id}', '{safe_name}')"
+        self._execute(sql)
+        print(f"ユーザー名を設定しました: {employee_id} - {user_name}")
+
+    def get_announcement_details(self, announcement_id):
+        announcement_sql = f"SELECT * FROM Announcements WHERE ID={announcement_id}"
+        announcement_result = self._query(announcement_sql)
+        if not announcement_result: return None
+
+        comments_sql = f"SELECT AuthorName, CommentText, CommentDate FROM Comments WHERE AnnouncementID={announcement_id} ORDER BY CommentDate ASC"
+        comments_result = self._query(comments_sql)
+
+        details = announcement_result[0]
+        details['Comments'] = comments_result
+        return details
+
+    def add_comment(self, announcement_id, author_name, comment_text, comment_date):
+        safe_author = author_name.replace("'", "''")
+        safe_comment = comment_text.replace("'", "''")
+        sql = f"INSERT INTO Comments (AnnouncementID, AuthorName, CommentText, CommentDate) VALUES ({announcement_id}, '{safe_author}', '{safe_comment}', #{comment_date}#)"
+        self._execute(sql)
+        print(f"コメントを追加しました: AnnouncementID={announcement_id}")
 
     def shutdown(self):
         if self.connection and self.connection.State == 1: # 1 == adStateOpen
@@ -364,6 +413,38 @@ class Backend(QObject):
         all_announcements = self.db_manager.load_employee_data(self.employee_id)["announcements"]
         self.announcementUpdated.emit(all_announcements)
         print(f"✅ お知らせ追加: {title}")
+
+    @Slot(int)
+    def getAnnouncementDetails(self, announcement_id):
+        if not self.employee_id: return
+        details = self.db_manager.get_announcement_details(announcement_id)
+        if details:
+            # Convert datetime objects to strings for JSON serialization
+            if isinstance(details.get('AnnouncementDate'), datetime):
+                details['AnnouncementDate'] = details['AnnouncementDate'].strftime('%Y-%m-%d')
+            for comment in details.get('Comments', []):
+                if isinstance(comment.get('CommentDate'), datetime):
+                    comment['CommentDate'] = comment['CommentDate'].strftime('%Y-%m-%d %H:%M')
+            self.announcementDetailsLoaded.emit(details)
+
+    @Slot(str)
+    def setUserName(self, user_name):
+        if not self.employee_id: return
+        self.db_manager.set_user_name(self.employee_id, user_name)
+        self.user_name = user_name
+        self.showAlert.emit(f"ようこそ、{user_name}さん！")
+
+    @Slot(int, str)
+    def addComment(self, announcement_id, comment_text):
+        if not self.employee_id: return
+        if not self.user_name:
+            self.userNameRequired.emit()
+            return
+        
+        comment_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.db_manager.add_comment(announcement_id, self.user_name, comment_text, comment_date)
+        # Refresh details view
+        self.getAnnouncementDetails(announcement_id)
 
 
 class MainWindow(QMainWindow):
